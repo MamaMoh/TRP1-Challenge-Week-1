@@ -4,6 +4,8 @@ const WRITE_TO_FILE_DESCRIPTION = `Request to write content to a file. This tool
 
 **Important:** You should prefer using other editing tools over write_to_file when making changes to existing files, since write_to_file is slower and cannot handle large files. Use write_to_file primarily for new file creation.
 
+**Intent governance:** An active intent must be selected (select_active_intent) before writing. The system enforces intent and scope; optional intent_id and mutation_class in the schema are for traceability—when omitted, the system derives them from the active intent and file existence.
+
 When using this tool, use it directly with the desired content. You do not need to display the content before using the tool. ALWAYS provide the COMPLETE file content in your response. This is NON-NEGOTIABLE. Partial updates or placeholders like '// rest of code unchanged' are STRICTLY FORBIDDEN. Failure to do so will result in incomplete or broken code.
 
 When creating a new project, organize all new files within a dedicated project directory unless the user specifies otherwise. Structure the project logically, adhering to best practices for the specific type of project being created.
@@ -31,6 +33,15 @@ export default {
 				content: {
 					type: "string",
 					description: CONTENT_PARAMETER_DESCRIPTION,
+				},
+				intent_id: {
+					type: "string",
+					description: "Optional. Intent ID governing this write (for traceability). When omitted, the active intent is used.",
+				},
+				mutation_class: {
+					type: "string",
+					description: "Optional. One of 'CREATE' or 'MODIFY'. When omitted, the system derives from file existence.",
+					enum: ["CREATE", "MODIFY"],
 				},
 			},
 			required: ["path", "content"],

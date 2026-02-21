@@ -41,6 +41,8 @@ import { autoImportSettings } from "./utils/autoImportSettings"
 import { API } from "./extension/api"
 import { OrchestrationStorage } from "./hooks/OrchestrationStorage"
 import { IntentManager } from "./hooks/IntentManager"
+import { IntentMapManager } from "./hooks/IntentMapManager"
+import { SharedBrainManager } from "./hooks/SharedBrainManager"
 import { HookEngine } from "./hooks/HookEngine"
 import { PreToolHook } from "./hooks/PreToolHook"
 import { PostToolHook } from "./hooks/PostToolHook"
@@ -204,9 +206,11 @@ export async function activate(context: vscode.ExtensionContext) {
 	const orchestrationStorage = new OrchestrationStorage()
 	const intentManager = new IntentManager(orchestrationStorage)
 	const traceManager = new TraceManager(orchestrationStorage)
+	const intentMapManager = new IntentMapManager(orchestrationStorage)
+	const sharedBrainManager = new SharedBrainManager(orchestrationStorage)
 	const hookEngine = new HookEngine()
 	const preToolHook = new PreToolHook(intentManager)
-	const postToolHook = new PostToolHook(traceManager, intentManager)
+	const postToolHook = new PostToolHook(traceManager, intentManager, intentMapManager)
 	hookEngine.registerPreHook((context) => preToolHook.run(context))
 	hookEngine.registerPostHook((context, result) => postToolHook.run(context, result))
 
@@ -217,6 +221,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	// Store hook engine and file state lock store globally for tool execution interception
 	;(global as any).__hookEngine = hookEngine
 	;(global as any).__intentManager = intentManager
+	;(global as any).__sharedBrainManager = sharedBrainManager
 	;(global as any).__fileStateLockStore = new FileStateLockStore()
 
 	// Initialize the provider *before* the Roo Code Cloud service.

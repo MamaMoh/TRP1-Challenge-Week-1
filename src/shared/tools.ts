@@ -119,6 +119,7 @@ export type NativeToolArgs = {
 	write_to_file: { path: string; content: string }
 	select_active_intent: { intent_id: string }
 	get_active_intent: Record<string, never>
+	record_shared_brain: { message: string }
 	// Add more tools as they are migrated to native protocol
 }
 
@@ -295,6 +296,7 @@ export const TOOL_DISPLAY_NAMES: Record<ToolName, string> = {
 	custom_tool: "use custom tools",
 	select_active_intent: "select active intent",
 	get_active_intent: "get active intent",
+	record_shared_brain: "record to shared brain",
 } as const
 
 // Define available tool groups.
@@ -329,6 +331,7 @@ export const ALWAYS_AVAILABLE_TOOLS: ToolName[] = [
 	"skill",
 	"select_active_intent",
 	"get_active_intent",
+	"record_shared_brain",
 ] as const
 
 /**

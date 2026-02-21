@@ -48,6 +48,7 @@ export const toolNames = [
 	"custom_tool",
 	"select_active_intent",
 	"get_active_intent",
+	"record_shared_brain",
 ] as const
 
 export const toolNamesSchema = z.enum(toolNames)

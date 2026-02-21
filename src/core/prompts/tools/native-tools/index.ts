@@ -15,6 +15,7 @@ import { createReadFileTool, type ReadFileToolOptions } from "./read_file"
 import runSlashCommand from "./run_slash_command"
 import selectActiveIntent from "./select_active_intent"
 import getActiveIntent from "./get_active_intent"
+import recordSharedBrain from "./record_shared_brain"
 import skill from "./skill"
 import searchReplace from "./search_replace"
 import edit_file from "./edit_file"
@@ -64,6 +65,7 @@ export function getNativeTools(options: NativeToolsOptions = {}): OpenAI.Chat.Ch
 		runSlashCommand,
 		selectActiveIntent,
 		getActiveIntent,
+		recordSharedBrain,
 		skill,
 		searchReplace,
 		edit_file,

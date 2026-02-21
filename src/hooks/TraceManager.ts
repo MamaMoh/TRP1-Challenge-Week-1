@@ -1,13 +1,14 @@
 import * as path from "path"
 import * as fs from "fs/promises"
 import * as crypto from "crypto"
+import { randomUUID } from "crypto"
 import { OrchestrationStorage } from "./OrchestrationStorage"
 import type { TraceLogEntry, MutationClass, SpecTraceLogEntry, TraceClassification } from "./types"
 
 /**
  * TraceManager handles logging of file write operations to agent_trace.jsonl.
- * It creates trace entries with complete metadata including intent ID, content hash,
- * file path, mutation class, and timestamp.
+ * Creates trace entries with intent ID, content hash, file path, mutation class, timestamp,
+ * and spec-aligned fields (id, vcs.revision_id when available, related to intent).
  */
 export class TraceManager {
 	constructor(private storage: OrchestrationStorage) {}
@@ -74,18 +75,25 @@ export class TraceManager {
 
 	/**
 	 * Converts internal trace entry to spec-aligned format for agent_trace.jsonl.
+	 * Includes id, vcs.revision_id (when gitSha present), and related for Intent–AST correlation.
 	 */
 	private toSpecEntry(entry: TraceLogEntry): SpecTraceLogEntry {
 		const classification: TraceClassification =
 			entry.mutationClass === "CREATE" ? "INTENT_EVOLUTION" : "AST_REFACTOR"
-		return {
+		const spec: SpecTraceLogEntry = {
+			id: randomUUID(),
 			timestamp: entry.timestamp,
 			intent_id: entry.intentId,
 			operation: "WRITE",
 			file_path: entry.filePath,
 			content_hash: `sha256:${entry.contentHash}`,
 			classification,
+			related: [{ type: "specification", value: entry.intentId }],
 		}
+		if (entry.gitSha) {
+			spec.vcs = { revision_id: entry.gitSha }
+		}
+		return spec
 	}
 
 	/**
@@ -95,13 +103,14 @@ export class TraceManager {
 	 * @param workspaceRoot Optional workspace root; when provided, write to workspaceRoot/.orchestration/agent_trace.jsonl
 	 */
 	async appendTraceEntry(entry: TraceLogEntry, workspaceRoot?: string): Promise<void> {
+		const traceFilePath = "agent_trace.jsonl"
+		const specEntry = this.toSpecEntry(entry)
+		const jsonLine = JSON.stringify(specEntry) + "\n"
 		try {
-			const traceFilePath = "agent_trace.jsonl"
-			const specEntry = this.toSpecEntry(entry)
-			const jsonLine = JSON.stringify(specEntry) + "\n"
 			await this.storage.appendFile(traceFilePath, jsonLine, workspaceRoot)
 		} catch (error) {
 			console.error(`[TraceManager] Failed to append trace entry for ${entry.filePath}:`, error)
+			throw error
 		}
 	}
 }

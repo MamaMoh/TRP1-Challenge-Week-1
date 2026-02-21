@@ -42,16 +42,22 @@ export interface TraceLogEntry {
 
 /**
  * Spec-aligned trace entry written to agent_trace.jsonl.
+ * Includes id and vcs for rubric "Intent–AST correlation"; related links to specification (intent).
  */
 export type TraceClassification = "INTENT_EVOLUTION" | "AST_REFACTOR"
 
 export interface SpecTraceLogEntry {
+	id: string
 	timestamp: string
 	intent_id: string
 	operation: "WRITE"
 	file_path: string
 	content_hash: string
 	classification: TraceClassification
+	/** VCS revision when available (e.g. git SHA). */
+	vcs?: { revision_id: string }
+	/** Links this trace to the governing intent (specification). */
+	related?: Array<{ type: string; value: string }>
 }
 
 /**
