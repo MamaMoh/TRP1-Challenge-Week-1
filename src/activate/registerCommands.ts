@@ -217,7 +217,7 @@ const getCommandsMap = ({ context, outputChannel, provider }: RegisterCommandOpt
 		}
 
 		try {
-			const activeIntent = await intentManager.getActiveIntent(currentTask.taskId)
+			const activeIntent = await intentManager.getActiveIntent(currentTask.taskId, currentTask.workspacePath)
 			if (activeIntent) {
 				const message =
 					`Active Intent: ${activeIntent.id} - ${activeIntent.name}\n\n` +

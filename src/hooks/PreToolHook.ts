@@ -55,8 +55,16 @@ export class PreToolHook {
 
 		const intentManager = this.getIntentManager()
 
-		// Distinguish "no intents defined in YAML" vs "no intent selected"; use task's workspace for .orchestration
+		// Require task workspace so we always validate against the correct .orchestration/active_intents.yaml
 		const workspaceRoot = context.workspacePath
+		if (!workspaceRoot || workspaceRoot.trim() === "") {
+			return {
+				allowed: false,
+				error: "Cannot validate intent: task workspace path is unknown. Please try again.",
+			}
+		}
+
+		// Distinguish "no intents defined in YAML" vs "no intent selected"; use task's workspace for .orchestration
 		const intents = await intentManager.loadIntents(workspaceRoot)
 		if (intents.length === 0) {
 			return {
@@ -70,11 +78,14 @@ export class PreToolHook {
 			activeIntent = await intentManager.getIntent(context.activeIntentId, workspaceRoot)
 			if (activeIntent) {
 				console.log(`[PreToolHook] Found active intent via context.activeIntentId: ${context.activeIntentId}`)
+			} else {
+				// Intent was removed from active_intents.yaml; clear in-memory mapping so we don't use stale state
+				await intentManager.clearActiveIntent(context.taskId)
 			}
 		}
 
 		if (!activeIntent) {
-			activeIntent = await intentManager.getActiveIntent(context.taskId)
+			activeIntent = await intentManager.getActiveIntent(context.taskId, workspaceRoot)
 			if (activeIntent) {
 				console.log(
 					`[PreToolHook] Found active intent via taskId lookup: ${context.taskId} -> ${activeIntent.id}`,
@@ -89,7 +100,8 @@ export class PreToolHook {
 		if (!activeIntent) {
 			return {
 				allowed: false,
-				error: `No active intent selected. Please use the select_active_intent tool to select an intent before performing ${context.toolName} operations.`,
+				error: `No active intent selected. Please use the select_active_intent tool to select an intent before performing ${context.toolName} operations. If you recently changed .orchestration/active_intents.yaml, ensure the file is saved.`,
+				clearActiveIntent: !!context.activeIntentId,
 			}
 		}
 
@@ -111,7 +123,6 @@ export class PreToolHook {
 						getExpectedHash(filePath: string): string | undefined
 				  }
 				| undefined
-			const workspaceRoot = context.workspacePath
 			if (workspaceRoot) {
 				const absolutePath = path.resolve(workspaceRoot, filePath)
 				if (store && store.getExpectedHash(filePath) !== undefined) {

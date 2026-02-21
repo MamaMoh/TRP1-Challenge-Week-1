@@ -89,6 +89,8 @@ export interface PreHookResult {
 	allowed: boolean
 	error?: string
 	modifiedParams?: Record<string, unknown>
+	/** When true, caller should clear task.activeIntentId (intent was removed from YAML) */
+	clearActiveIntent?: boolean
 }
 
 /**

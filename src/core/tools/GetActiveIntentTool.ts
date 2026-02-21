@@ -28,7 +28,7 @@ export class GetActiveIntentTool extends BaseTool<"get_active_intent"> {
 				return
 			}
 
-			const activeIntent = await this.intentManager.getActiveIntent(task.taskId)
+			const activeIntent = await this.intentManager.getActiveIntent(task.taskId, task.workspacePath)
 			if (!activeIntent) {
 				pushToolResult(
 					`No active intent is currently selected for this task.\n\n` +

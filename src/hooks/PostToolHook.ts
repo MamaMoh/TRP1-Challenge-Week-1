@@ -36,7 +36,8 @@ export class PostToolHook {
 		}
 
 		// Only trace and update lock when the write actually succeeded
-		const executionSucceeded = result != null && typeof result === "object" && (result as { success?: boolean }).success !== false
+		const executionSucceeded =
+			result != null && typeof result === "object" && (result as { success?: boolean }).success !== false
 		if (!executionSucceeded) {
 			return { success: true }
 		}
@@ -44,7 +45,7 @@ export class PostToolHook {
 		const intentManager = this.getIntentManager()
 		let activeIntentId: string | undefined = context.activeIntentId
 		if (!activeIntentId) {
-			const activeIntent = await intentManager.getActiveIntent(context.taskId)
+			const activeIntent = await intentManager.getActiveIntent(context.taskId, context.workspacePath)
 			activeIntentId = activeIntent?.id
 		}
 		if (!activeIntentId) {
