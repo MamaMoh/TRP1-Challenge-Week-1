@@ -32,7 +32,7 @@ export class IntentManager {
 		const exists = await this.storage.fileExists("active_intents.yaml", workspaceRoot)
 		if (!exists) {
 			await this.initializeIntentsFile(workspaceRoot)
-			this.intentsCacheByWorkspace.set(cacheKey, [])
+			// Do not cache empty: so when user adds intents we re-read on next loadIntents()
 			return []
 		}
 
@@ -41,7 +41,7 @@ export class IntentManager {
 			const parsed = yaml.parse(content) as ActiveIntentsYaml
 
 			if (!parsed || !Array.isArray(parsed.intents)) {
-				this.intentsCacheByWorkspace.set(cacheKey, [])
+				// Do not cache empty: so when user adds intents we re-read on next loadIntents()
 				return []
 			}
 
@@ -55,7 +55,10 @@ export class IntentManager {
 				acceptanceCriteria: Array.isArray(intent.acceptanceCriteria) ? intent.acceptanceCriteria : [],
 				metadata: intent.metadata || {},
 			}))
-			this.intentsCacheByWorkspace.set(cacheKey, intents)
+			// Only cache when we have intents; do not cache empty so user can add intents and we re-read without restart
+			if (intents.length > 0) {
+				this.intentsCacheByWorkspace.set(cacheKey, intents)
+			}
 			return intents
 		} catch (error) {
 			throw new Error(
