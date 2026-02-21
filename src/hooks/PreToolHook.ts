@@ -17,18 +17,45 @@ const DESTRUCTIVE_TOOLS = new Set([
 	"apply_patch",
 ])
 
+const INTENTIGNORE_FILENAME = ".orchestration/.intentignore"
+
 /**
  * PreToolHook validates that an active intent is selected before destructive tool operations.
  * This enforces the intent-first architecture principle.
  * Also validates file paths against the active intent's scope (User Story 2).
+ * Paths matching .orchestration/.intentignore patterns skip scope validation (allow list).
  */
 export class PreToolHook {
 	private scopeValidator: ScopeValidator
 	private intentManager: IntentManager
+	private intentIgnoreCache: Map<string, string[]> = new Map()
 
 	constructor(intentManager: IntentManager) {
 		this.intentManager = intentManager
 		this.scopeValidator = new ScopeValidator()
+	}
+
+	/**
+	 * Loads glob patterns from .orchestration/.intentignore (one per line; # comments and empty lines ignored).
+	 * Cached per workspace root. Paths matching any pattern skip scope validation.
+	 */
+	private async loadIntentIgnorePatterns(workspaceRoot: string): Promise<string[]> {
+		const cached = this.intentIgnoreCache.get(workspaceRoot)
+		if (cached !== undefined) return cached
+		const fullPath = path.join(workspaceRoot, INTENTIGNORE_FILENAME)
+		let content: string
+		try {
+			content = await fs.readFile(fullPath, "utf-8")
+		} catch {
+			this.intentIgnoreCache.set(workspaceRoot, [])
+			return []
+		}
+		const patterns = content
+			.split(/\r?\n/)
+			.map((line) => line.replace(/#.*$/, "").trim())
+			.filter((line) => line.length > 0)
+		this.intentIgnoreCache.set(workspaceRoot, patterns)
+		return patterns
 	}
 
 	/**
@@ -130,10 +157,16 @@ export class PreToolHook {
 			}
 		}
 
-		// Validate scope for file operations
+		// Validate scope for file operations (paths in .orchestration/.intentignore skip scope check)
 		const filePath = (context.toolParams.path as string) || (context.toolParams.file_path as string)
 		if ((context.toolName === "write_to_file" || context.toolName === "edit_file") && filePath) {
-			const isInScope = await this.scopeValidator.validatePath(filePath, activeIntent.ownedScope)
+			const intentIgnorePatterns = await this.loadIntentIgnorePatterns(workspaceRoot)
+			const ignoredByIntentIgnore =
+				intentIgnorePatterns.length > 0 &&
+				this.scopeValidator.matchesAnyPattern(filePath, intentIgnorePatterns)
+			const isInScope =
+				ignoredByIntentIgnore ||
+				(await this.scopeValidator.validatePath(filePath, activeIntent.ownedScope))
 			if (!isInScope) {
 				recordBlockedLesson(`Scope violation: intent ${activeIntent.id} not authorized to edit ${filePath}.`)
 				return {

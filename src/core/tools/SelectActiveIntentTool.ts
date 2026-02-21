@@ -1,3 +1,4 @@
+import * as vscode from "vscode"
 import { Task } from "../task/Task"
 import { formatResponse } from "../prompts/responses"
 import { BaseTool, ToolCallbacks } from "./BaseTool"
@@ -40,6 +41,20 @@ export class SelectActiveIntentTool extends BaseTool<"select_active_intent"> {
 					formatResponse.toolError(
 						`Intent ${intent_id} not found. Please select a valid intent from .orchestration/active_intents.yaml in this workspace.`,
 					),
+				)
+				return
+			}
+
+			// Human-in-the-loop: require user approval before activating intent (intent evolution)
+			const choice = await vscode.window.showWarningMessage(
+				`Allow intent "${intent.name}" (${intent_id}) to govern this task? Scope: ${intent.ownedScope.join(", ") || "none"}`,
+				{ modal: true },
+				"Approve",
+				"Reject",
+			)
+			if (choice !== "Approve") {
+				pushToolResult(
+					`Intent ${intent_id} was not activated. User ${choice === "Reject" ? "rejected" : "dismissed"} the request. Use select_active_intent again to choose another intent.`,
 				)
 				return
 			}

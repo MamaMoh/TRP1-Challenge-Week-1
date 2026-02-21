@@ -51,6 +51,10 @@ export class PostToolHook {
 		}
 	}
 
+	/**
+	 * Post-hook for tool execution. Records execute_command failures to Shared Brain;
+	 * for write_to_file/edit_file, appends to agent_trace.jsonl, updates intent_map.md on INTENT_EVOLUTION, and updates file state lock.
+	 */
 	async run(context: ToolExecutionContext, result: unknown): Promise<PostHookResult> {
 		// Record execute_command failures to Shared Brain
 		if (context.toolName === "execute_command") {
@@ -78,6 +82,12 @@ export class PostToolHook {
 		const executionSucceeded =
 			result != null && typeof result === "object" && (result as { success?: boolean }).success !== false
 		if (!executionSucceeded) {
+			const successVal =
+				result != null && typeof result === "object" ? (result as { success?: boolean }).success : undefined
+			console.warn("[PostToolHook] Skipping trace: tool execution did not succeed.", {
+				tool: context.toolName,
+				success: successVal,
+			})
 			return { success: true }
 		}
 
@@ -88,16 +98,23 @@ export class PostToolHook {
 			activeIntentId = activeIntent?.id
 		}
 		if (!activeIntentId) {
+			console.warn(
+				"[PostToolHook] Skipping trace: no active intent (taskId=%s, workspacePath=%s).",
+				context.taskId,
+				context.workspacePath ?? "(undefined)",
+			)
 			return { success: true }
 		}
 
 		const workspaceRoot = context.workspacePath
 		if (!workspaceRoot) {
+			console.warn("[PostToolHook] Skipping trace: no workspace root in context.")
 			return { success: true, error: "No workspace root found in context" }
 		}
 
 		const filePath = (context.toolParams.path as string) || (context.toolParams.file_path as string)
 		if (!filePath) {
+			console.warn("[PostToolHook] Skipping trace: missing path in tool params.", context.toolParams)
 			return { success: true, error: "Missing file path in tool params" }
 		}
 
@@ -107,10 +124,12 @@ export class PostToolHook {
 				const absolutePath = path.resolve(workspaceRoot, filePath)
 				content = await fs.readFile(absolutePath, "utf-8")
 			} catch (err) {
+				console.warn("[PostToolHook] Skipping trace: could not read file after edit_file.", filePath, err)
 				return { success: true, error: "Could not read file for trace after edit_file" }
 			}
 		}
 		if (content === undefined) {
+			console.warn("[PostToolHook] Skipping trace: missing content in tool params.", context.toolName, filePath)
 			return { success: true, error: "Missing file path or content in tool params" }
 		}
 
@@ -125,6 +144,7 @@ export class PostToolHook {
 				mutationClass,
 			})
 			await this.traceManager.appendTraceEntry(traceEntry, workspaceRoot)
+			console.info("[PostToolHook] Recorded trace entry:", traceEntry.filePath, "intent=" + traceEntry.intentId)
 
 			// Update intent_map.md on INTENT_EVOLUTION (new file created under an intent)
 			if (traceEntry.mutationClass === "CREATE") {

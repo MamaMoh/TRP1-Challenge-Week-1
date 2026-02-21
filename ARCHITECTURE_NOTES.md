@@ -2,8 +2,8 @@
 
 # TRP1 Challenge: Intent-Code Traceability System
 
-**Date**: 2026-02-16  
-**Purpose**: Document key integration points for hook system implementation
+**Date**: 2026-02-21  
+**Purpose**: Document architecture and the implemented Intent-Governed Hook Middleware (intent-code traceability, HITL, trace, Shared Brain).
 
 ---
 
@@ -18,7 +18,10 @@
 7. [Task State Storage](#6-task-state-storage)
 8. [Message Flow](#7-message-flow)
 9. [Hook Integration Points](#8-hook-integration-points)
-10. [Implementation Roadmap](#9-implementation-roadmap)
+10. [TRP1 Implemented: Intent-Governed Hook Middleware (Detailed)](#10-trp1-implemented-intent-governed-hook-middleware-detailed)
+11. [Implementation Roadmap](#9-implementation-roadmap)
+12. [Critical Code References](#11-critical-code-references)
+13. [File Structure for Hook System](#12-file-structure-for-hook-system)
 
 ---
 
@@ -61,16 +64,16 @@ graph TB
         F -->|Manages| P[Conversation State]
     end
 
-    subgraph "Future: Hook System"
-        Q[Hook Engine] -.->|Intercepts| I
-        Q -.->|Validates| E
-        Q -.->|Logs| R[Trace Manager]
-        R -.->|Writes| S[.orchestration/]
+    subgraph "Intent-Governed Hook Middleware (Implemented)"
+        Q[Hook Engine] -->|Intercepts| I
+        Q -->|Validates| E
+        Q -->|Logs| R[Trace Manager]
+        R -->|Writes| S[.orchestration/]
     end
 
-    style Q fill:#ff9999,stroke:#ff0000,stroke-dasharray: 5 5
-    style R fill:#ff9999,stroke:#ff0000,stroke-dasharray: 5 5
-    style S fill:#ff9999,stroke:#ff0000,stroke-dasharray: 5 5
+    style Q fill:#c8e6c9,stroke:#2e7d32
+    style R fill:#c8e6c9,stroke:#2e7d32
+    style S fill:#c8e6c9,stroke:#2e7d32
 ```
 
 ### Component Interaction Flow
@@ -996,14 +999,9 @@ task.fileContextTracker.trackFileContext(path, source)
 - Hook can read/write task state, but should be careful not to corrupt conversation flow
 - Prefer adding new properties rather than modifying existing ones
 
-**Intent State Extension** (Future):
+**Intent State** (Implemented):
 
-```typescript
-// Add to Task class
-activeIntentId?: string
-intentContext?: IntentContext
-intentHistory?: IntentExecution[]
-```
+- `Task.activeIntentId?: string` — set by SelectActiveIntentTool on Approve; cleared by BaseTool when PreToolHook returns `clearActiveIntent`.
 
 ---
 
@@ -1121,7 +1119,7 @@ graph TB
         K --> N
     end
 
-    subgraph "Future: Hook System"
+    subgraph "Intent-Governed Hook Middleware (Implemented)"
         O[Hook Engine]
         P[Intent Manager]
         Q[Trace Manager]
@@ -1133,14 +1131,14 @@ graph TB
 
     B -->|Messages| C
     J -->|Calls| K
-    J -.->|Intercepts| O
-    O -.->|Queries| P
-    O -.->|Logs| Q
+    J -->|Intercepts| O
+    O -->|Queries| P
+    O -->|Logs| Q
 
-    style O fill:#ff9999,stroke:#ff0000,stroke-dasharray: 5 5
-    style P fill:#ff9999,stroke:#ff0000,stroke-dasharray: 5 5
-    style Q fill:#ff9999,stroke:#ff0000,stroke-dasharray: 5 5
-    style R fill:#ff9999,stroke:#ff0000,stroke-dasharray: 5 5
+    style O fill:#c8e6c9,stroke:#2e7d32
+    style P fill:#c8e6c9,stroke:#2e7d32
+    style Q fill:#c8e6c9,stroke:#2e7d32
+    style R fill:#c8e6c9,stroke:#2e7d32
 ```
 
 ---
@@ -1247,88 +1245,178 @@ flowchart TD
 
 ---
 
-## 9. Implementation Roadmap
+## 10. TRP1 Implemented: Intent-Governed Hook Middleware (Detailed)
 
-### Phase 1: Foundation
+This section documents the **implemented** Intent-Governed Hook Middleware: every component, data flow, file format, and integration point. The system enforces intent-first tool execution, records an agent trace, supports Human-in-the-Loop (HITL) approval for intent selection, maintains an intent map and Shared Brain, and respects scope and optimistic locking.
 
-1. **Create Hook Infrastructure** (`src/hooks/` directory)
+### 10.1 Principles
 
-    - `HookEngine.ts` - Main middleware coordinator
-    - `PreToolHook.ts` - Pre-execution interceptors
-    - `PostToolHook.ts` - Post-execution interceptors
+- **Intent-first**: Destructive tools (`write_to_file`, `edit_file`, `execute_command`, `search_replace`, `apply_diff`, `apply_patch`) require an active intent. The user or agent must call `select_active_intent` first; the user must Approve the intent in a modal before it is set.
+- **Same-workspace governance**: All intent data lives under the task’s workspace: `.orchestration/active_intents.yaml`, `.orchestration/agent_trace.jsonl`, `.orchestration/intent_map.md`, `.orchestration/AGENT.md`, `.orchestration/.intentignore`. The task’s `workspacePath` is required for validation and trace writing.
+- **Pre-hook blocks, post-hook logs**: Pre-hook validates intent and scope; if it returns `allowed: false`, the tool is not executed. Post-hook runs after execution and appends to the trace (and optionally updates intent map and file-state lock); it never blocks the tool result.
 
-2. **Implement IntentManager** (`src/hooks/IntentManager.ts`)
+### 10.2 Component Overview
 
-    - Read/write `active_intents.yaml`
-    - Parse YAML structure
-    - Validate intent specifications
+```mermaid
+graph TB
+    subgraph "Extension activation (extension.ts)"
+        EXT[extension.ts] --> HE[HookEngine]
+        EXT --> IM[IntentManager]
+        EXT --> TM[TraceManager]
+        EXT --> IMM[IntentMapManager]
+        EXT --> SBM[SharedBrainManager]
+        EXT --> PH[PreToolHook]
+        EXT --> POH[PostToolHook]
+        HE --> PH
+        HE --> POH
+        POH --> TM
+        POH --> IMM
+        PH --> IM
+        POH --> IM
+    end
+    subgraph "Global (for tools)"
+        GHE["global.__hookEngine"]
+        GIM["global.__intentManager"]
+        GSB["global.__sharedBrainManager"]
+        GFS["global.__fileStateLockStore"]
+    end
+    EXT --> GHE
+    EXT --> GIM
+    EXT --> GSB
+    EXT --> GFS
+```
 
-3. **Create OrchestrationStorage** (`src/hooks/OrchestrationStorage.ts`)
-    - File I/O for `.orchestration/` directory
-    - Ensure directory exists
-    - Handle file locking for parallel orchestration
+- **HookEngine**: Single pre-hook and single post-hook registered at activation. BaseTool calls `executePreHooks(context)` before `execute()` and `executePostHooks(context, executionResult)` in a `finally` block after `execute()`.
+- **PreToolHook**: Validates workspace, loads intents from `active_intents.yaml`, resolves active intent (from `context.activeIntentId` or `IntentManager.getActiveIntent(taskId, workspacePath)`), blocks if no intent or scope violation or stale file; records blocked lessons to Shared Brain; loads `.intentignore` and skips scope check for matching paths; records CREATE/MODIFY for the path so PostToolHook can classify INTENT_EVOLUTION vs AST_REFACTOR.
+- **PostToolHook**: For `execute_command`, on failure appends a lesson to Shared Brain. For `write_to_file` and `edit_file`: only when execution succeeded and active intent and workspace and path/content are present, creates a trace entry via TraceManager, appends to `agent_trace.jsonl`, on CREATE appends to `intent_map.md` via IntentMapManager, and updates the file-state lock store.
+- **IntentManager**: Reads/writes `active_intents.yaml` (no cache; always from disk). In-memory map `taskId -> intentId` for active intent. `setActiveIntent`/`getActiveIntent`/`clearActiveIntent`; `getIntent(id, workspace)` validates intent still exists in YAML. `formatIntentContext(intent)` produces XML for system prompt injection.
+- **TraceManager**: `createTraceEntry(...)` builds internal `TraceLogEntry` (intentId, contentHash, filePath, mutationClass, timestamp, toolName, optional lineRanges, gitSha). `toSpecEntry(entry)` converts to `SpecTraceLogEntry` with `id` (UUID), `related: [{ type: "specification", value: intentId }]`, and optional `vcs: { revision_id: gitSha }`. `appendTraceEntry(entry, workspaceRoot)` appends one JSON line to `agent_trace.jsonl` via OrchestrationStorage.
+- **IntentMapManager**: On INTENT_EVOLUTION (trace classification for CREATE), appends a table row to `intent_map.md` (Intent ID | File Path | Timestamp).
+- **SharedBrainManager**: `getContent(workspaceRoot)` reads `.orchestration/AGENT.md` for system prompt injection. `append(workspaceRoot, content)` creates the file with a header if missing, then appends. PreToolHook and PostToolHook append lessons when blocking or when `execute_command` fails; `record_shared_brain` tool also appends.
+- **OrchestrationStorage**: All paths under `workspaceRoot/.orchestration/` when `workspaceRoot` is provided. `readFile`, `writeFile`, `appendFile`, `fileExists`; ensures directory exists before write/append.
+- **ScopeValidator**: Glob matching (minimatch) of file path against intent `ownedScope` patterns. Used by PreToolHook; paths matching `.intentignore` patterns skip scope check.
+- **FileStateLockStore**: In-memory expected content hash per file path for optimistic locking. PreToolHook checks staleness before allowing write; PostToolHook updates the store after a successful write.
 
-### Phase 2: Intent Selection
+### 10.3 End-to-End Flow (Write Path)
 
-4. **Create select_active_intent Tool**
-    - Tool definition: `src/core/prompts/tools/native-tools/select_active_intent.ts`
-    - Tool handler: `src/core/tools/SelectActiveIntentTool.ts`
-    - Register in `buildNativeToolsArray()`
-    - Add dispatch case in `presentAssistantMessage.ts`
+1. **Intent selection**: Agent (or user) invokes `select_active_intent` with `intent_id`. SelectActiveIntentTool loads intent from `active_intents.yaml`, then shows `vscode.window.showWarningMessage(..., "Approve", "Reject")`. Only on "Approve" does it call `IntentManager.setActiveIntent(taskId, intent_id)` and set `task.activeIntentId = intent_id`.
+2. **Tool call**: Agent calls `write_to_file` or `edit_file`. presentAssistantMessage routes to the tool’s `handle(task, block, callbacks)`.
+3. **BaseTool.handle**: Parses params from `nativeArgs`, builds `ToolExecutionContext` (toolName, toolParams, taskId, workspacePath, activeIntentId). Calls `hookEngine.executePreHooks(context)`.
+4. **PreToolHook**: Requires `workspacePath`. Loads intents; if none, blocks. Resolves active intent (context or getActiveIntent); if none, blocks and optionally sets `clearActiveIntent`. For file tools, validates path against intent scope (or .intentignore), checks file-state lock for staleness, records CREATE/MODIFY for path in `__lastWriteMutationByPath`. Returns `{ allowed: true }` or `{ allowed: false, error, clearActiveIntent? }`.
+5. **BaseTool**: If pre-hook blocked, calls `handleError` and returns; if `clearActiveIntent`, sets `task.activeIntentId = undefined`. Otherwise calls `await this.execute(params, task, callbacks)`, then in `finally` calls `hookEngine.executePostHooks(context, executionResult)`.
+6. **PostToolHook**: For `write_to_file`/`edit_file`, only if `result.success !== false` and active intent and workspace and path/content present: creates trace entry (mutationClass from PreToolHook or determined by file existence), appends to `agent_trace.jsonl`, on CREATE appends to `intent_map.md`, updates file-state lock. For `execute_command` failure, appends lesson to Shared Brain.
+7. **Trace file**: Each line in `agent_trace.jsonl` is a JSON object: `id`, `timestamp`, `intent_id`, `operation: "WRITE"`, `file_path`, `content_hash` (sha256:...), `classification` (INTENT_EVOLUTION or AST_REFACTOR), `related: [{ type: "specification", value: intentId }]`, optional `vcs: { revision_id }`.
 
-### Phase 3: System Prompt Integration
+### 10.4 .orchestration/ File Formats
 
-5. **Modify System Prompt** (`src/core/prompts/system.ts`)
-    - Inject intent context in `generatePrompt()`
-    - Load active intent from `IntentManager`
-    - Format as XML block
+| File                  | Purpose                                                                                         | Format                                              |
+| --------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `active_intents.yaml` | Intent definitions (id, name, description, status, ownedScope, constraints, acceptanceCriteria) | YAML, `intents: []`                                 |
+| `agent_trace.jsonl`   | Append-only trace of file writes                                                                | One JSON object per line (SpecTraceLogEntry)        |
+| `intent_map.md`       | Intent → file mapping for INTENT_EVOLUTION                                                      | Markdown table: Intent ID \| File Path \| Timestamp |
+| `AGENT.md`            | Shared Brain: lessons and decisions                                                             | Markdown; header + append-only lines                |
+| `.intentignore`       | Glob patterns; matching paths skip scope check                                                  | One pattern per line, # comments                    |
 
-### Phase 4: Tool Hooks
+**agent_trace.jsonl schema (SpecTraceLogEntry)**:
 
-6. **Wrap BaseTool.handle()** (`src/core/tools/BaseTool.ts`)
+- `id`: UUID (one per entry).
+- `timestamp`: ISO 8601.
+- `intent_id`: Governing intent ID.
+- `operation`: `"WRITE"`.
+- `file_path`: Relative to workspace root.
+- `content_hash`: `sha256:<hex>`.
+- `classification`: `"INTENT_EVOLUTION"` (file create) or `"AST_REFACTOR"` (file modify).
+- `related`: `[{ "type": "specification", "value": "<intent_id>" }]`.
+- `vcs` (optional): `{ "revision_id": "<git-sha>" }`.
 
-    - Add Pre-Hook before `execute()`
-    - Add Post-Hook after `execute()`
-    - Integrate with `HookEngine`
+### 10.5 System Prompt Injection
 
-7. **Implement Scope Validation**
-    - Check file paths against intent scope
-    - Validate commands against intent constraints
-    - Enforce intent boundaries
+In `Task.getSystemPrompt()` (Task.ts): after building `basePrompt`, the code obtains `__intentManager` and, if there is an active intent for this task (getActiveIntent), appends `intentManager.formatIntentContext(intent)` (XML block with intent_id, name, description, owned_scope, constraints, acceptance_criteria). It then obtains `__sharedBrainManager` and, if `getContent(workspacePath)` returns non-empty content, appends that to the prompt. Thus every request gets the active intent context and Shared Brain when available.
 
-### Phase 5: Trace Logging
+### 10.6 Tool Integration
 
-8. **Implement TraceManager** (`src/hooks/TraceManager.ts`)
+- **select_active_intent**: Tool definition in `src/core/prompts/tools/native-tools/select_active_intent.ts`; handler `SelectActiveIntentTool` in `src/core/tools/SelectActiveIntentTool.ts`. HITL: `showWarningMessage(..., "Approve", "Reject")`; only Approve sets intent and `task.activeIntentId`.
+- **get_active_intent**: Read-only tool to query current active intent.
+- **write_to_file**: Optional `intent_id` and `mutation_class` in schema for traceability; when omitted, system uses active intent and file existence. Pre-hook enforces intent and scope; post-hook records trace.
+- **record_shared_brain**: Tool that appends a message to `.orchestration/AGENT.md` via SharedBrainManager.
 
-    - Append to `agent_trace.jsonl`
-    - Calculate content hashes (SHA-256)
-    - Format trace entries
+### 10.7 Extension Registration (extension.ts)
 
-9. **Implement IntentMapManager** (`src/hooks/IntentMapManager.ts`)
-    - Update `intent_map.md`
-    - Map files to intents
-    - Track spatial relationships
+- `OrchestrationStorage`, `IntentManager`, `TraceManager`, `IntentMapManager`, `SharedBrainManager` created once.
+- `HookEngine` created; `PreToolHook` and `PostToolHook` instantiated with the above; `registerPreHook(preToolHook.run)`, `registerPostHook(postToolHook.run)`.
+- `initializeSelectActiveIntentTool(intentManager)`, `initializeGetActiveIntentTool(intentManager)`.
+- `(global as any).__hookEngine = hookEngine`, `__intentManager = intentManager`, `__sharedBrainManager = sharedBrainManager`, `__fileStateLockStore = new FileStateLockStore()`.
 
-### Phase 6: Advanced Features
+### 10.8 Diagnostic Logging (PostToolHook)
 
-10. **Implement Optimistic Locking**
-
-    - Prevent file overwrites in parallel orchestration
-    - Handle conflicts gracefully
-
-11. **Add Intent Status Tracking**
-
-    - Update intent status based on tool execution
-    - Track progress toward intent completion
-
-12. **Implement Shared Brain** (`AGENT.md`)
-    - Log lessons learned
-    - Store patterns and anti-patterns
-    - Enable context engineering
+When trace is skipped, PostToolHook logs a warning: execution not succeeded, no active intent, no workspace root, missing path/content, or could not read file after edit_file. When a trace entry is appended, it logs an info line with file path and intent id. TraceManager rethrows on append failure so PostToolHook can log "[PostToolHook] Failed to log trace entry".
 
 ---
 
-## 10. Critical Code References
+## 9. Implementation Roadmap
+
+### Phase 1: Foundation — **Done**
+
+1. **Create Hook Infrastructure** (`src/hooks/` directory) — **Done**
+
+    - `HookEngine.ts` - Main middleware coordinator
+    - `PreToolHook.ts` - Pre-execution validation (intent, scope, stale file)
+    - `PostToolHook.ts` - Trace logging, intent_map, Shared Brain lessons
+
+2. **Implement IntentManager** (`src/hooks/IntentManager.ts`) — **Done**
+
+    - Read/write `active_intents.yaml` (no cache; always from disk)
+    - setActiveIntent / getActiveIntent / clearActiveIntent
+    - formatIntentContext() for system prompt
+
+3. **Create OrchestrationStorage** (`src/hooks/OrchestrationStorage.ts`) — **Done**
+    - File I/O for `.orchestration/` with optional workspaceRoot
+    - ensureOrchestrationDirectory; readFile, writeFile, appendFile, fileExists
+
+### Phase 2: Intent Selection — **Done**
+
+4. **Create select_active_intent Tool** — **Done**
+    - Tool definition: `src/core/prompts/tools/native-tools/select_active_intent.ts`
+    - Tool handler: `src/core/tools/SelectActiveIntentTool.ts` with **HITL**: `showWarningMessage(..., "Approve", "Reject")`; only Approve sets intent
+    - Register in build-tools; dispatch in `presentAssistantMessage.ts`
+
+### Phase 3: System Prompt Integration — **Done**
+
+5. **Intent + Shared Brain injection** — **Done**
+    - In `Task.getSystemPrompt()`: inject active intent XML via IntentManager.formatIntentContext()
+    - Inject Shared Brain content via SharedBrainManager.getContent(workspacePath)
+
+### Phase 4: Tool Hooks — **Done**
+
+6. **Wrap BaseTool.handle()** (`src/core/tools/BaseTool.ts`) — **Done**
+
+    - Pre-hook before execute(); on allowed: false, handleError and return; on clearActiveIntent, clear task.activeIntentId
+    - Post-hook in finally block with executionResult (success/failure)
+
+7. **Scope + locking** — **Done**
+    - ScopeValidator (glob) for file paths; `.orchestration/.intentignore` patterns skip scope
+    - FileStateLockStore for optimistic locking (stale file check in PreToolHook, update in PostToolHook)
+
+### Phase 5: Trace Logging — **Done**
+
+8. **TraceManager** (`src/hooks/TraceManager.ts`) — **Done**
+
+    - createTraceEntry (contentHash, mutationClass, etc.); toSpecEntry (id, related, vcs)
+    - appendTraceEntry → agent_trace.jsonl (workspace-scoped)
+
+9. **IntentMapManager** (`src/hooks/IntentMapManager.ts`) — **Done**
+    - appendIntentEvolutionEntry on INTENT_EVOLUTION (CREATE) from PostToolHook
+
+### Phase 6: Advanced Features — **Done**
+
+10. **Optimistic locking** — **Done** (FileStateLockStore + PreToolHook/PostToolHook)
+
+11. **Shared Brain** — **Done**
+    - SharedBrainManager: AGENT.md getContent/append; PreToolHook/PostToolHook record lessons; record_shared_brain tool; Task injects into system prompt
+
+---
+
+## 11. Critical Code References
 
 ### System Prompt
 
@@ -1361,25 +1449,37 @@ flowchart TD
 - **Class**: `src/core/task/Task.ts:163`
 - **History**: `src/core/task/Task.ts:310` (`apiConversationHistory`, `clineMessages`)
 - **Persistence**: `src/core/task-persistence/*.ts`
+- **Intent + Shared Brain injection**: `Task.getSystemPrompt()` (Task.ts) uses `__intentManager.formatIntentContext()`, `__sharedBrainManager.getContent(workspacePath)`
+
+### Hook Middleware (Intent-Governed)
+
+- **Registration**: `src/extension.ts` — HookEngine, PreToolHook, PostToolHook, globals `__hookEngine`, `__intentManager`, `__sharedBrainManager`, `__fileStateLockStore`
+- **Interception**: `src/core/tools/BaseTool.ts:162` — pre-hook before execute, post-hook in finally with executionResult; handles `preResult.clearActiveIntent`
+- **Pre-hook**: `src/hooks/PreToolHook.ts:94` (`run`) — DESTRUCTIVE_TOOLS, workspacePath required, intent resolve, scope + .intentignore, stale-file check, \_\_lastWriteMutationByPath
+- **Post-hook**: `src/hooks/PostToolHook.ts:57` (`run`) — MUTATION_TOOLS (write_to_file, edit_file), trace append, intent_map on CREATE, file-state lock update; execute_command failure → Shared Brain lesson
+- **Intent selection (HITL)**: `src/core/tools/SelectActiveIntentTool.ts:48` — showWarningMessage Approve/Reject; setActiveIntent + task.activeIntentId only on Approve
+- **Trace**: `src/hooks/TraceManager.ts` — createTraceEntry, toSpecEntry (id, related, vcs), appendTraceEntry → agent_trace.jsonl
+- **Types**: `src/hooks/types.ts` — ToolExecutionContext, PreHookResult, PostHookResult, SpecTraceLogEntry, TraceClassification
 
 ---
 
-## 11. File Structure for Hook System
+## 12. File Structure for Hook System
 
-### Source Code Structure
+### Source Code Structure (Implemented)
 
 ```
 src/hooks/
-├── HookEngine.ts              # Main middleware coordinator
-├── PreToolHook.ts             # Pre-execution interceptors
-├── PostToolHook.ts            # Post-execution interceptors
-├── IntentManager.ts           # Manages active_intents.yaml
-├── TraceManager.ts            # Manages agent_trace.jsonl
-├── IntentMapManager.ts        # Manages intent_map.md
-├── SharedBrainManager.ts      # Manages .orchestration/AGENT.md (Shared Brain)
-├── OrchestrationStorage.ts    # File I/O for .orchestration/
-├── ScopeValidator.ts          # Validates file paths against scope patterns
-└── OptimisticLockManager.ts   # Handles optimistic locking with content hashes
+├── HookEngine.ts              # Main middleware coordinator; executePreHooks / executePostHooks
+├── PreToolHook.ts             # Intent + scope + stale-file validation; .intentignore; records CREATE/MODIFY for PostToolHook
+├── PostToolHook.ts            # Trace append, intent_map on INTENT_EVOLUTION, Shared Brain lessons, file-state lock update
+├── IntentManager.ts           # active_intents.yaml (no cache); setActiveIntent / getActiveIntent / clearActiveIntent; formatIntentContext
+├── TraceManager.ts            # createTraceEntry, toSpecEntry (id, related, vcs), appendTraceEntry → agent_trace.jsonl
+├── IntentMapManager.ts        # appendIntentEvolutionEntry → intent_map.md
+├── SharedBrainManager.ts      # AGENT.md getContent / append (Shared Brain)
+├── OrchestrationStorage.ts    # .orchestration/ readFile, writeFile, appendFile, fileExists (workspace-scoped)
+├── ScopeValidator.ts          # Glob matching (minimatch) for intent ownedScope
+├── types.ts                   # ToolExecutionContext, PreHookResult, PostHookResult, SpecTraceLogEntry, etc.
+└── FileStateLockStore.ts      # In-memory expected hash per path (optimistic locking; used by Pre/PostToolHook)
 
 tests/hooks/
 ├── HookEngine.test.ts
