@@ -8,8 +8,6 @@ import type { ActiveIntent, ActiveIntentsYaml, IntentStatus } from "./types"
  */
 export class IntentManager {
 	private storage: OrchestrationStorage
-	/** Cache per workspace root so intent lookup uses the task's .orchestration/active_intents.yaml */
-	private intentsCacheByWorkspace: Map<string, ActiveIntent[]> = new Map()
 	private activeIntentsByTask: Map<string, string> = new Map() // taskId -> intentId
 
 	constructor(storage: OrchestrationStorage) {
@@ -18,21 +16,14 @@ export class IntentManager {
 
 	/**
 	 * Loads all intents from active_intents.yaml for the given workspace.
-	 * When workspaceRoot is provided, reads from workspaceRoot/.orchestration/ so the task's project is used.
+	 * Always reads from disk (no cache) so newly added or edited intents are seen without restart.
 	 * @param workspaceRoot Optional workspace root (e.g. task.workspacePath); when omitted, uses default getWorkspacePath()
 	 * @returns Array of all intents
 	 */
 	async loadIntents(workspaceRoot?: string): Promise<ActiveIntent[]> {
-		const cacheKey = workspaceRoot ?? ""
-		const cached = this.intentsCacheByWorkspace.get(cacheKey)
-		if (cached !== undefined) {
-			return cached
-		}
-
 		const exists = await this.storage.fileExists("active_intents.yaml", workspaceRoot)
 		if (!exists) {
 			await this.initializeIntentsFile(workspaceRoot)
-			// Do not cache empty: so when user adds intents we re-read on next loadIntents()
 			return []
 		}
 
@@ -41,11 +32,10 @@ export class IntentManager {
 			const parsed = yaml.parse(content) as ActiveIntentsYaml
 
 			if (!parsed || !Array.isArray(parsed.intents)) {
-				// Do not cache empty: so when user adds intents we re-read on next loadIntents()
 				return []
 			}
 
-			const intents = parsed.intents.map((intent) => ({
+			return parsed.intents.map((intent) => ({
 				id: intent.id,
 				name: intent.name || "",
 				description: intent.description || "",
@@ -55,11 +45,6 @@ export class IntentManager {
 				acceptanceCriteria: Array.isArray(intent.acceptanceCriteria) ? intent.acceptanceCriteria : [],
 				metadata: intent.metadata || {},
 			}))
-			// Only cache when we have intents; do not cache empty so user can add intents and we re-read without restart
-			if (intents.length > 0) {
-				this.intentsCacheByWorkspace.set(cacheKey, intents)
-			}
-			return intents
 		} catch (error) {
 			throw new Error(
 				`Failed to parse active_intents.yaml: ${error instanceof Error ? error.message : String(error)}`,
@@ -94,17 +79,19 @@ export class IntentManager {
 	}
 
 	/**
-	 * Gets the active intent for a task.
+	 * Gets the active intent for a task. Validates against the workspace's YAML so if the intent
+	 * was removed from active_intents.yaml we return null (must re-select from current file).
 	 * @param taskId The task ID
-	 * @returns The active intent if one is set, null otherwise
+	 * @param workspaceRoot Optional workspace root; when provided, intent must exist in that workspace's .orchestration/active_intents.yaml
+	 * @returns The active intent if one is set and still exists in YAML, null otherwise
 	 */
-	async getActiveIntent(taskId: string): Promise<ActiveIntent | null> {
+	async getActiveIntent(taskId: string, workspaceRoot?: string): Promise<ActiveIntent | null> {
 		const intentId = this.activeIntentsByTask.get(taskId)
 		if (!intentId) {
 			return null
 		}
 
-		return await this.getIntent(intentId)
+		return await this.getIntent(intentId, workspaceRoot)
 	}
 
 	/**
@@ -116,15 +103,10 @@ export class IntentManager {
 	}
 
 	/**
-	 * Invalidates the intents cache for a workspace (or all if no key given), forcing a reload on next access.
-	 * Useful when active_intents.yaml is modified externally.
+	 * No-op: intents are always read from disk (no cache). Kept for API compatibility.
 	 */
-	invalidateCache(workspaceRoot?: string): void {
-		if (workspaceRoot !== undefined) {
-			this.intentsCacheByWorkspace.delete(workspaceRoot)
-		} else {
-			this.intentsCacheByWorkspace.clear()
-		}
+	invalidateCache(_workspaceRoot?: string): void {
+		// Intent list is not cached; no need to invalidate
 	}
 
 	/**

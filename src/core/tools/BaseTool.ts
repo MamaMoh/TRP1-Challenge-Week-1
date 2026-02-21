@@ -172,6 +172,9 @@ export abstract class BaseTool<TName extends ToolName> {
 			try {
 				const preResult = await hookEngine.executePreHooks(context)
 				if (!preResult.allowed) {
+					if (preResult.clearActiveIntent) {
+						task.activeIntentId = undefined
+					}
 					// Pre-hook blocked execution
 					await callbacks.handleError(
 						`pre-hook validation for ${this.name}`,
