@@ -1,0 +1,38 @@
+# Active Intents Configuration
+# This file defines the available intents for this workspace.
+# Each intent specifies what files/areas can be modified and what constraints apply.
+
+intents:
+  - id: INT-001
+    name: Update main.py only
+    description: Allow modifications to main.py only
+    status: PENDING
+    ownedScope:
+      - "main.py"
+    constraints:
+      - Only modify main.py; do not create or edit other files
+    acceptanceCriteria:
+      - Changes are limited to main.py
+
+  - id: INT-002
+    name: Modify Makefile
+    description: Allow modifications to the Makefile
+    status: PENDING
+    ownedScope:
+      - "Makefile"
+    constraints:
+      - Only modify Makefile; do not create or edit other files
+    acceptanceCriteria:
+      - Changes are limited to Makefile
+
+      
+  - id: INT-003
+    name: Create HTML
+    description: Allow Creation of HTML files
+    status: PENDING
+    ownedScope:
+      - "*.html"
+    constraints:
+      - Only Create HTML; do not create or edit other files
+    acceptanceCriteria:
+      - Changes are limited to HTML

@@ -35,7 +35,7 @@
 - [简体中文](locales/zh-CN/README.md)
 - [繁體中文](locales/zh-TW/README.md)
 - ...
-      </details>
+  </details>
 
 ---
 
@@ -66,10 +66,10 @@ Learn more: [Using Modes](https://docs.roocode.com/basic-usage/using-modes) • 
 
 <div align="center">
 
-|                                                                                                                                                                           |                                                                                                                                                                            |                                                                                                                                                                         |
-| :-----------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
-| <a href="https://www.youtube.com/watch?v=Mcq3r1EPZ-4"><img src="https://img.youtube.com/vi/Mcq3r1EPZ-4/maxresdefault.jpg" width="100%"></a><br><b>Installing Roo Code</b> | <a href="https://www.youtube.com/watch?v=ZBML8h5cCgo"><img src="https://img.youtube.com/vi/ZBML8h5cCgo/maxresdefault.jpg" width="100%"></a><br><b>Configuring Profiles</b> | <a href="https://www.youtube.com/watch?v=r1bpod1VWhg"><img src="https://img.youtube.com/vi/r1bpod1VWhg/maxresdefault.jpg" width="100%"></a><br><b>Codebase Indexing</b> |
-|    <a href="https://www.youtube.com/watch?v=iiAv1eKOaxk"><img src="https://img.youtube.com/vi/iiAv1eKOaxk/maxresdefault.jpg" width="100%"></a><br><b>Custom Modes</b>     |     <a href="https://www.youtube.com/watch?v=Ho30nyY332E"><img src="https://img.youtube.com/vi/Ho30nyY332E/maxresdefault.jpg" width="100%"></a><br><b>Checkpoints</b>      |    <a href="https://www.youtube.com/watch?v=HmnNSasv7T8"><img src="https://img.youtube.com/vi/HmnNSasv7T8/maxresdefault.jpg" width="100%"></a><br><b>Context Management</b>     |
+|                                                                                                                                                                           |                                                                                                                                                                            |                                                                                                                                                                          |
+| :-----------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
+| <a href="https://www.youtube.com/watch?v=Mcq3r1EPZ-4"><img src="https://img.youtube.com/vi/Mcq3r1EPZ-4/maxresdefault.jpg" width="100%"></a><br><b>Installing Roo Code</b> | <a href="https://www.youtube.com/watch?v=ZBML8h5cCgo"><img src="https://img.youtube.com/vi/ZBML8h5cCgo/maxresdefault.jpg" width="100%"></a><br><b>Configuring Profiles</b> | <a href="https://www.youtube.com/watch?v=r1bpod1VWhg"><img src="https://img.youtube.com/vi/r1bpod1VWhg/maxresdefault.jpg" width="100%"></a><br><b>Codebase Indexing</b>  |
+|    <a href="https://www.youtube.com/watch?v=iiAv1eKOaxk"><img src="https://img.youtube.com/vi/iiAv1eKOaxk/maxresdefault.jpg" width="100%"></a><br><b>Custom Modes</b>     |     <a href="https://www.youtube.com/watch?v=Ho30nyY332E"><img src="https://img.youtube.com/vi/Ho30nyY332E/maxresdefault.jpg" width="100%"></a><br><b>Checkpoints</b>      | <a href="https://www.youtube.com/watch?v=HmnNSasv7T8"><img src="https://img.youtube.com/vi/HmnNSasv7T8/maxresdefault.jpg" width="100%"></a><br><b>Context Management</b> |
 
 </div>
 <p align="center">
@@ -84,6 +84,47 @@ Learn more: [Using Modes](https://docs.roocode.com/basic-usage/using-modes) • 
 - **[Reddit Community](https://www.reddit.com/r/RooCode):** Share your experiences and see what others are building.
 - **[GitHub Issues](https://github.com/RooCodeInc/Roo-Code/issues):** Report bugs and track development.
 - **[Feature Requests](https://github.com/RooCodeInc/Roo-Code/discussions/categories/feature-requests?discussions_q=is%3Aopen+category%3A%22Feature+Requests%22+sort%3Atop):** Have an idea? Share it with the developers.
+
+---
+
+## TRP1 Challenge: Intent-Governed Hook Middleware
+
+This repository includes an implementation of **Intent-Code Traceability** for the Roo Code extension (TRP1 Challenge). The system enforces intent-first governance for destructive operations and maintains an audit trace.
+
+### Features
+
+- **Intent selection before destructive ops** — `select_active_intent` must be used before `write_to_file`, `edit_file`, or `execute_command`. The user approves or rejects the intent via a VS Code dialog (HITL).
+- **Scope validation** — File paths are validated against the active intent’s `ownedScope` (glob patterns). Optional `.orchestration/.intentignore` skips scope for matching paths.
+- **Agent trace** — Every successful file write is appended to `.orchestration/agent_trace.jsonl` with intent id, content hash, path, and classification (INTENT_EVOLUTION / AST_REFACTOR).
+- **Intent map** — New files (CREATE) are recorded in `.orchestration/intent_map.md`.
+- **Shared Brain** — Lessons (e.g. blocked ops, failed commands) are appended to `.orchestration/AGENT.md` and injected into the system prompt.
+- **Optimistic locking** — Stale-file check before writes; file-state lock updated after successful writes.
+
+### Documentation
+
+| Document                                                   | Description                                                                                                 |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| [**TRP1 Challenge Report**](docs/TRP1_Challenge_Report.md) | Formal report: architecture before/after, design rationale, implementation phases, challenges, sample data. |
+| [**ARCHITECTURE_NOTES.md**](ARCHITECTURE_NOTES.md)         | Detailed architecture and hook integration (sections 8–12).                                                 |
+| [**Mermaid diagrams**](docs/MERMAID_DIAGRAMS.md)           | All report diagrams in Mermaid (architecture, sequence, phases).                                            |
+| [**Spec & tasks**](specs/001-intent-hook-middleware/)      | Feature spec, data model, task list (`spec.md`, `data-model.md`, `tasks.md`).                               |
+
+### Workspace layout (`.orchestration/`)
+
+After using intent-governed tools, the workspace may contain:
+
+- `active_intents.yaml` — Intent definitions (id, name, scope, constraints).
+- `agent_trace.jsonl` — Append-only write trace (one JSON object per line).
+- `intent_map.md` — Intent → file table for new files.
+- `AGENT.md` — Shared Brain (lessons and decisions).
+- `.intentignore` — Optional glob patterns that skip scope validation.
+
+### Quick try
+
+1. Open a workspace folder and ensure `.orchestration/active_intents.yaml` exists (create it with at least one intent and `ownedScope`).
+2. In a chat, ask the agent to create or edit a file (e.g. “Create a simple test.html”).
+3. When the agent calls `select_active_intent`, approve the intent in the dialog.
+4. After a successful write, check `.orchestration/agent_trace.jsonl` and `.orchestration/intent_map.md`.
 
 ---
 
