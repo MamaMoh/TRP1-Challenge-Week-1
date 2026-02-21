@@ -1376,6 +1376,7 @@ src/hooks/
 ├── IntentManager.ts           # Manages active_intents.yaml
 ├── TraceManager.ts            # Manages agent_trace.jsonl
 ├── IntentMapManager.ts        # Manages intent_map.md
+├── SharedBrainManager.ts      # Manages .orchestration/AGENT.md (Shared Brain)
 ├── OrchestrationStorage.ts    # File I/O for .orchestration/
 ├── ScopeValidator.ts          # Validates file paths against scope patterns
 └── OptimisticLockManager.ts   # Handles optimistic locking with content hashes
@@ -1415,7 +1416,7 @@ tests/integration/
 - `active_intents.yaml`: YAML format for human-readable intent definitions
 - `agent_trace.jsonl`: JSONL format (one JSON object per line) for append-only logging
 - `intent_map.md`: Markdown format for human-readable spatial mapping
-- `AGENT.md`: Markdown format for lessons learned (future enhancement)
+- `AGENT.md` (**Shared Brain**): Markdown file maintained by `SharedBrainManager`. Created with a header on first append; all subsequent writes are append-only. Used for lessons learned (e.g. when verification fails) and architectural decisions. Shared across parallel sessions (Architect/Builder/Tester).
 
 ---
 

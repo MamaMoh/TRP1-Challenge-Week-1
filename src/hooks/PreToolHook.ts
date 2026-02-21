@@ -42,6 +42,23 @@ export class PreToolHook {
 	}
 
 	/**
+	 * Appends a lesson line to .orchestration/AGENT.md (Shared Brain). Non-blocking; logs and swallows errors.
+	 */
+	private async recordLessonToSharedBrain(workspaceRoot: string, lesson: string): Promise<void> {
+		try {
+			const sharedBrain = (global as any).__sharedBrainManager as
+				| { append(workspaceRoot: string, content: string): Promise<void> }
+				| undefined
+			if (sharedBrain) {
+				const line = `- [${new Date().toISOString()}] ${lesson}`
+				await sharedBrain.append(workspaceRoot, line)
+			}
+		} catch (err) {
+			console.error("[PreToolHook] Failed to record lesson to Shared Brain:", err)
+		}
+	}
+
+	/**
 	 * Runs pre-execution validation.
 	 * Blocks destructive tools if no active intent is selected.
 	 * @param context The tool execution context
@@ -64,9 +81,14 @@ export class PreToolHook {
 			}
 		}
 
+		const recordBlockedLesson = (lesson: string) => {
+			this.recordLessonToSharedBrain(workspaceRoot, lesson).catch(() => {})
+		}
+
 		// Distinguish "no intents defined in YAML" vs "no intent selected"; use task's workspace for .orchestration
 		const intents = await intentManager.loadIntents(workspaceRoot)
 		if (intents.length === 0) {
+			recordBlockedLesson(`Blocked: no intents in active_intents.yaml (tool: ${context.toolName}).`)
 			return {
 				allowed: false,
 				error: "No intents are defined in active_intents.yaml. Please create an intent before performing modifications.",
@@ -98,6 +120,9 @@ export class PreToolHook {
 		}
 
 		if (!activeIntent) {
+			recordBlockedLesson(
+				`Blocked: no active intent selected for ${context.toolName}. Use select_active_intent first.`,
+			)
 			return {
 				allowed: false,
 				error: `No active intent selected. Please use the select_active_intent tool to select an intent before performing ${context.toolName} operations. If you recently changed .orchestration/active_intents.yaml, ensure the file is saved.`,
@@ -110,6 +135,7 @@ export class PreToolHook {
 		if ((context.toolName === "write_to_file" || context.toolName === "edit_file") && filePath) {
 			const isInScope = await this.scopeValidator.validatePath(filePath, activeIntent.ownedScope)
 			if (!isInScope) {
+				recordBlockedLesson(`Scope violation: intent ${activeIntent.id} not authorized to edit ${filePath}.`)
 				return {
 					allowed: false,
 					error: `Scope Violation: Intent ${activeIntent.id} (${activeIntent.name}) is not authorized to edit ${filePath}. Allowed scope: ${activeIntent.ownedScope.join(", ")}`,
@@ -129,6 +155,9 @@ export class PreToolHook {
 					try {
 						const currentContent = await fs.readFile(absolutePath, "utf-8")
 						if (store.checkStale(filePath, currentContent)) {
+							recordBlockedLesson(
+								`Stale file: ${filePath} was modified since read; re-read before writing.`,
+							)
 							return {
 								allowed: false,
 								error: "Stale file detected. Please re-read file before writing.",

@@ -34,6 +34,7 @@ import { updateTodoListTool } from "../tools/UpdateTodoListTool"
 import { runSlashCommandTool } from "../tools/RunSlashCommandTool"
 import { selectActiveIntentTool } from "../tools/SelectActiveIntentTool"
 import { getActiveIntentTool } from "../tools/GetActiveIntentTool"
+import { recordSharedBrainTool } from "../tools/RecordSharedBrainTool"
 import { skillTool } from "../tools/SkillTool"
 import { generateImageTool } from "../tools/GenerateImageTool"
 import { applyDiffTool as applyDiffToolClass } from "../tools/ApplyDiffTool"
@@ -814,6 +815,13 @@ export async function presentAssistantMessage(cline: Task) {
 					break
 				case "get_active_intent":
 					await getActiveIntentTool.handle(cline, block as ToolUse<"get_active_intent">, {
+						askApproval,
+						handleError,
+						pushToolResult,
+					})
+					break
+				case "record_shared_brain":
+					await recordSharedBrainTool.handle(cline, block as ToolUse<"record_shared_brain">, {
 						askApproval,
 						handleError,
 						pushToolResult,

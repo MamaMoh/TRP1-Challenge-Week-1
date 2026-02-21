@@ -3850,6 +3850,22 @@ export class Task extends EventEmitter<TaskEvents> implements TaskLike {
 				}
 			}
 
+			// Inject Shared Brain (.orchestration/AGENT.md) so the agent uses lessons and decisions across sessions
+			const sharedBrainManager = (global as any).__sharedBrainManager as
+				| { getContent(workspaceRoot: string): Promise<string> }
+				| undefined
+			if (sharedBrainManager && this.workspacePath) {
+				const sharedBrainContent = await sharedBrainManager.getContent(this.workspacePath)
+				const trimmed = sharedBrainContent.trim()
+				if (trimmed.length > 0) {
+					basePrompt =
+						basePrompt +
+						"\n\n<shared_brain>\nLessons learned and project knowledge (from .orchestration/AGENT.md). Use this to avoid repeating mistakes and to follow project decisions:\n\n" +
+						trimmed +
+						"\n</shared_brain>"
+				}
+			}
+
 			return basePrompt
 		})()
 	}
